@@ -1,13 +1,19 @@
-const TelegramBot = require('node-telegram-bot-api');
 const axios = require('axios');
 const { Pool } = require('pg'); // Changed from Client to Pool
 const dotenv = require('dotenv');
 dotenv.config();
+const TelegramBot = require('node-telegram-bot-api');
 const dayjs = require('dayjs');
 let isBetween = require('dayjs/plugin/isBetween');
 dayjs.extend(isBetween);
 const cron = require('node-cron');
+console.log(process.env);
 const pool = new Pool({
+  user: process.env.PGUSER,
+  host: process.env.PGHOST,
+  database: process.env.PGDATABASE,
+  password: process.env.PGPASSWORD, // Change to your password
+
   // You can configure your pool settings here, if needed.
   // max: 20, // max number of clients in the pool
   // idleTimeoutMillis: 30000, // how long a client is allowed to remain idle before being closed
@@ -481,24 +487,58 @@ function getCountStr(count) {
 // GraphQL query for LC daily question
 const dailyLCQuery = `
 query questionOfToday {
-        activeDailyCodingChallengeQuestion {
-            date
-            userStatus
-            link
-            question {
-                acRate
-                difficulty
-                freqBar
-                frontendQuestionId: questionFrontendId
-                isFavor
-                paidOnly: isPaidOnly
-                status
-                title
-            }
-        }
+  activeDailyCodingChallengeQuestion {
+  date
+  userStatus
+  link
+  question {
+    acRate
+    difficulty
+    freqBar
+    frontendQuestionId: questionFrontendId
+    isFavor
+    paidOnly: isPaidOnly
+    status
+    title
+    titleSlug
+    hasVideoSolution
+    hasSolution
+    topicTags {
+      name
+      id
+      slug
     }
+  }
+  }
+  }
 `;
-
+// `
+// query questionOfToday {
+// activeDailyCodingChallengeQuestion {
+// date
+// userStatus
+// link
+// question {
+//   acRate
+//   difficulty
+//   freqBar
+//   frontendQuestionId: questionFrontendId
+//   isFavor
+//   paidOnly: isPaidOnly
+//   status
+//   title
+//   titleSlug
+//   hasVideoSolution
+//   hasSolution
+//   topicTags {
+//     name
+//     id
+//     slug
+//   }
+// }
+// }
+// }
+// `;
 // POST request to get LC daily question
 const getLCQuestion = async () => {
   const response = await axios({
@@ -511,6 +551,7 @@ const getLCQuestion = async () => {
       query: dailyLCQuery,
     },
   });
+  console.log(response.data);
   const data = response.data.data.activeDailyCodingChallengeQuestion;
   const date = data.date;
   const question = data.question;
@@ -555,23 +596,26 @@ bot.onText(/\/startLC/i, async (msg) => {
   // Just for testing every 1 minute
   // cronJob = cron.schedule('* * * * *', () => {
   // Posts a daily question at 8:01AM
-  cronJob = cron.schedule('01 8 * * *', () => {
-    getLCQuestion()
-      .then((result) => {
-        console.log(result);
-        bot.sendMessage(chatId, result, {
-          message_thread_id: msgThreadId,
-          parse_mode: 'Markdown',
+  cronJob = cron.schedule(
+    '01 8 * * *',
+    () => {
+      getLCQuestion()
+        .then((result) => {
+          console.log(result);
+          bot.sendMessage(chatId, result, {
+            message_thread_id: msgThreadId,
+            parse_mode: 'Markdown',
+          });
+        })
+        .catch((error) => {
+          console.error(error);
         });
-      })
-      .catch((error) => {
-        console.error(error);
-      });
-  },
-  {
-    scheduled: true,
-    timezone: 'Asia/Singapore',
-  });
+    },
+    {
+      scheduled: true,
+      timezone: 'Asia/Singapore',
+    }
+  );
 });
 
 // Command to end cron job
@@ -626,5 +670,12 @@ bot.onText(/!lc/i, async (msg) => {
       console.error(error);
     });
 });
-
+bot.on('message', (msg) => {
+  // Check if the message is a new chat member or left chat member notification
+  if (msg.new_chat_members || msg.left_chat_member) {
+    bot.deleteMessage(msg.chat.id, msg.message_id).catch((err) => {
+      console.error('Error deleting message:', err);
+    });
+  }
+});
 console.log('Bot started');
